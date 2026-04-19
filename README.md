@@ -1,5 +1,4 @@
-[<img width="250" height="250" alt="imagen" src="https://github.com/user-attachments/assets/9be60615-30d9-4bab-b656-a19d3090b9dc" />
-](https://img88.glitterfy.com/26109/glitterfy601341735488.gif)
+<a href="https://www.glitterfy.com/"><img src="https://img88.glitterfy.com/26109/glitterfy601341735488.gif" alt="Glitter Photos" border=0 /></a><br /><a href="https://www.glitterfy.com/">[Glitterfy.com - *Glitter Photos*]</a>
 
 text-memorize
 -------------
