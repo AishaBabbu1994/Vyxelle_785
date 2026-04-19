@@ -1,3 +1,5 @@
+<img width="250" height="250" alt="imagen" src="https://github.com/user-attachments/assets/9be60615-30d9-4bab-b656-a19d3090b9dc" />
+
 text-memorize
 -------------
 [![asciicast](https://asciinema.org/a/984avh6xfeaqxe8earjpg6xnn.png)](https://asciinema.org/a/984avh6xfeaqxe8earjpg6xnn)
