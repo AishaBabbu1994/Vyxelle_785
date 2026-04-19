@@ -1,0 +1,262 @@
+
+<h2 class="sr-only">Herramienta interactiva para memorizar textos: introduce tu texto, configura las opciones y practica adivinando palabras ocultas.</h2>
+
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--font-sans); }
+  .container { padding: 1.5rem 0; max-width: 680px; }
+  .section { background: var(--color-background-primary); border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-lg); padding: 1.25rem; margin-bottom: 1rem; }
+  textarea { width: 100%; min-height: 120px; resize: vertical; font-family: var(--font-sans); font-size: 14px; }
+  .controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin: 1rem 0; }
+  .ctrl-group label { font-size: 13px; color: var(--color-text-secondary); display: block; margin-bottom: 4px; }
+  .ctrl-group input[type=number] { width: 100%; }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .line-display { font-size: 15px; line-height: 2; font-family: var(--font-mono); background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 1rem; margin-bottom: 1rem; min-height: 3rem; word-break: break-word; }
+  .blank { display: inline-block; background: var(--color-background-danger); color: var(--color-text-danger); border-radius: 3px; padding: 1px 4px; font-weight: 500; letter-spacing: 1px; cursor: default; }
+  .blank.revealed { background: var(--color-background-success); color: var(--color-text-success); }
+  .feedback { font-size: 14px; min-height: 1.4em; margin-bottom: 0.75rem; font-weight: 500; }
+  .feedback.correct { color: var(--color-text-success); }
+  .feedback.wrong { color: var(--color-text-danger); }
+  .feedback.skip { color: var(--color-text-secondary); }
+  .progress { font-size: 13px; color: var(--color-text-secondary); margin-bottom: 0.5rem; }
+  .stats { display: flex; gap: 16px; flex-wrap: wrap; }
+  .stat { font-size: 13px; color: var(--color-text-secondary); }
+  .stat span { font-weight: 500; color: var(--color-text-primary); }
+  input[type=text]#guess { font-size: 15px; }
+</style>
+
+<div class="container">
+  <div class="section" id="setup-section">
+    <p style="font-size:13px;color:var(--color-text-secondary);margin-bottom:8px;">Pega o escribe el texto que quieres memorizar:</p>
+    <textarea id="text-input" placeholder="Ingresa tu texto aquí. Cada línea se practicará por separado."></textarea>
+    <div class="controls">
+      <div class="ctrl-group">
+        <label for="num-words">Palabras a ocultar por línea (0 = aleatorio)</label>
+        <input type="number" id="num-words" value="0" min="0" max="20">
+      </div>
+      <div class="ctrl-group">
+        <label for="lower">Mínimo de palabras ocultas</label>
+        <input type="number" id="lower" value="1" min="1" max="20">
+      </div>
+      <div class="ctrl-group">
+        <label for="upper">Máximo (0 = sin límite)</label>
+        <input type="number" id="upper" value="0" min="0" max="20">
+      </div>
+      <div class="ctrl-group">
+        <label for="tries">Intentos por palabra (0 = ilimitado)</label>
+        <input type="number" id="tries" value="3" min="0" max="10">
+      </div>
+    </div>
+    <div class="btn-row">
+      <button onclick="startSession()">Comenzar práctica ↗</button>
+    </div>
+  </div>
+
+  <div class="section" id="practice-section" style="display:none;">
+    <div class="progress" id="progress-text"></div>
+    <div class="line-display" id="line-display"></div>
+    <div class="feedback" id="feedback"></div>
+    <div class="btn-row" style="margin-bottom:12px;">
+      <input type="text" id="guess" placeholder="Escribe la palabra que falta..." style="flex:1;" onkeydown="if(event.key==='Enter')checkGuess()">
+      <button onclick="checkGuess()">Verificar</button>
+      <button onclick="skipWord()">Saltar</button>
+    </div>
+    <div class="btn-row">
+      <button onclick="nextLine()">Siguiente línea →</button>
+      <button onclick="resetSession()">Reiniciar</button>
+    </div>
+    <div style="margin-top:1rem; border-top:0.5px solid var(--color-border-tertiary); padding-top:1rem;">
+      <div class="stats">
+        <div class="stat">Correctas: <span id="stat-correct">0</span></div>
+        <div class="stat">Errores: <span id="stat-wrong">0</span></div>
+        <div class="stat">Saltadas: <span id="stat-skip">0</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let lines = [];
+let currentLineIdx = 0;
+let currentWords = [];
+let currentMissing = [];
+let currentMissingIdx = 0;
+let currentTries = 1;
+let stats = { correct: 0, wrong: 0, skip: 0 };
+let renderedParts = [];
+
+function getConfig() {
+  return {
+    num: parseInt(document.getElementById('num-words').value) || 0,
+    lower: parseInt(document.getElementById('lower').value) || 1,
+    upper: parseInt(document.getElementById('upper').value) || 0,
+    tries: parseInt(document.getElementById('tries').value) || 0
+  };
+}
+
+function startSession() {
+  const raw = document.getElementById('text-input').value.trim();
+  if (!raw) { alert('Por favor ingresa algún texto.'); return; }
+  lines = raw.split('\n').filter(l => l.trim().length > 0);
+  stats = { correct: 0, wrong: 0, skip: 0 };
+  currentLineIdx = 0;
+  updateStats();
+  document.getElementById('setup-section').style.display = 'none';
+  document.getElementById('practice-section').style.display = 'block';
+  loadLine();
+}
+
+function loadLine() {
+  if (currentLineIdx >= lines.length) {
+    showFinished();
+    return;
+  }
+  const cfg = getConfig();
+  const line = lines[currentLineIdx];
+  const words = line.split(' ');
+  const n = words.length;
+  let num;
+  if (cfg.num > 0) {
+    num = Math.min(cfg.num, n);
+  } else {
+    const upper = cfg.upper > 0 ? Math.min(cfg.upper, n) : n;
+    const lower = Math.min(cfg.lower, upper);
+    num = Math.floor(Math.random() * (upper - lower + 1)) + lower;
+  }
+  const hideSet = new Set();
+  const indices = Array.from({length: n}, (_, i) => i);
+  while (hideSet.size < num && hideSet.size < n) {
+    const pick = indices[Math.floor(Math.random() * n)];
+    hideSet.add(pick);
+  }
+  currentWords = words;
+  currentMissing = [];
+  renderedParts = words.map((w, i) => {
+    const clean = w.replace(/[^a-zA-ZÀ-ÿ0-9]/g, '');
+    if (hideSet.has(i) && clean.length > 0) {
+      currentMissing.push({ word: w, idx: i, revealed: false });
+      return { type: 'blank', word: w, idx: i, revealed: false };
+    }
+    return { type: 'word', word: w };
+  });
+  currentMissingIdx = 0;
+  currentTries = 1;
+  document.getElementById('progress-text').textContent =
+    `Línea ${currentLineIdx + 1} de ${lines.length} — ${currentMissing.length} palabra(s) oculta(s)`;
+  document.getElementById('feedback').textContent = '';
+  document.getElementById('feedback').className = 'feedback';
+  document.getElementById('guess').value = '';
+  renderLine();
+  document.getElementById('guess').focus();
+}
+
+function renderLine() {
+  const display = document.getElementById('line-display');
+  display.innerHTML = renderedParts.map((p, pi) => {
+    if (p.type === 'word') return '<span>' + escHtml(p.word) + ' </span>';
+    const blanks = '_'.repeat(p.word.replace(/[^a-zA-ZÀ-ÿ0-9]/g,'').length || 3);
+    const active = currentMissing[currentMissingIdx] && currentMissing[currentMissingIdx].idx === p.idx;
+    if (p.revealed) {
+      return '<span class="blank revealed">' + escHtml(p.word) + '</span> ';
+    }
+    return '<span class="blank' + (active ? ' active' : '') + '">' + blanks + '</span> ';
+  }).join('');
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function checkGuess() {
+  if (currentMissingIdx >= currentMissing.length) return;
+  const guess = document.getElementById('guess').value.trim();
+  if (!guess) return;
+  const cfg = getConfig();
+  const target = currentMissing[currentMissingIdx];
+  const targetClean = target.word.replace(/[^a-zA-ZÀ-ÿ0-9]/g,'').toLowerCase();
+  const guessClean = guess.replace(/[^a-zA-ZÀ-ÿ0-9]/g,'').toLowerCase();
+  const fb = document.getElementById('feedback');
+  if (guessClean === targetClean) {
+    fb.textContent = '✓ ¡Correcto! La palabra era "' + target.word + '".';
+    fb.className = 'feedback correct';
+    stats.correct++;
+    revealCurrent();
+  } else if (cfg.tries > 0 && currentTries >= cfg.tries) {
+    fb.textContent = '✗ Se acabaron los intentos. La palabra era "' + target.word + '".';
+    fb.className = 'feedback wrong';
+    stats.wrong++;
+    revealCurrent();
+  } else {
+    fb.textContent = '✗ Incorrecto. Intento ' + currentTries + (cfg.tries > 0 ? ' de ' + cfg.tries : '') + '. Intenta de nuevo.';
+    fb.className = 'feedback wrong';
+    currentTries++;
+    document.getElementById('guess').value = '';
+    document.getElementById('guess').focus();
+    updateStats();
+    return;
+  }
+  document.getElementById('guess').value = '';
+  updateStats();
+  advanceMissing();
+}
+
+function skipWord() {
+  if (currentMissingIdx >= currentMissing.length) return;
+  const target = currentMissing[currentMissingIdx];
+  const fb = document.getElementById('feedback');
+  fb.textContent = 'Saltada. La palabra era "' + target.word + '".';
+  fb.className = 'feedback skip';
+  stats.skip++;
+  revealCurrent();
+  updateStats();
+  advanceMissing();
+}
+
+function revealCurrent() {
+  const target = currentMissing[currentMissingIdx];
+  const part = renderedParts.find(p => p.type === 'blank' && p.idx === target.idx);
+  if (part) part.revealed = true;
+  renderLine();
+}
+
+function advanceMissing() {
+  currentMissingIdx++;
+  currentTries = 1;
+  document.getElementById('guess').value = '';
+  if (currentMissingIdx >= currentMissing.length) {
+    document.getElementById('feedback').textContent += ' ✓ Línea completada.';
+    document.getElementById('guess').disabled = true;
+  } else {
+    document.getElementById('guess').disabled = false;
+    document.getElementById('guess').focus();
+  }
+  renderLine();
+}
+
+function nextLine() {
+  currentLineIdx++;
+  document.getElementById('guess').disabled = false;
+  loadLine();
+}
+
+function resetSession() {
+  document.getElementById('setup-section').style.display = 'block';
+  document.getElementById('practice-section').style.display = 'none';
+  document.getElementById('guess').disabled = false;
+}
+
+function updateStats() {
+  document.getElementById('stat-correct').textContent = stats.correct;
+  document.getElementById('stat-wrong').textContent = stats.wrong;
+  document.getElementById('stat-skip').textContent = stats.skip;
+}
+
+function showFinished() {
+  document.getElementById('line-display').textContent = '¡Terminaste todo el texto!';
+  document.getElementById('progress-text').textContent = 'Sesión completada';
+  document.getElementById('feedback').textContent =
+    'Correctas: ' + stats.correct + ' | Errores: ' + stats.wrong + ' | Saltadas: ' + stats.skip;
+  document.getElementById('feedback').className = 'feedback correct';
+  document.getElementById('guess').disabled = true;
+}
+</script>
